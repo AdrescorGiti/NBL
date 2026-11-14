@@ -291,6 +291,7 @@ void set_modified(void);
 void prepare_for_display(void);
 #ifdef ENABLE_MULTIBUFFER
 void mention_name_and_linecount(void);
+void redecorate_after_switch(void);
 void switch_to_prev_buffer(void);
 void switch_to_next_buffer(void);
 void close_buffer(void);
@@ -621,6 +622,8 @@ void blank_it_when_expired(void);
 void set_blankdelay_to_one(void);
 char *display_string(const char *buf, size_t column, size_t span,
 						bool isdata, bool isprompt);
+void blank_titlebar(void);
+int buffer_number(openfilestruct *buffer);
 void titlebar(const char *path);
 void minibar(void);
 void statusline(message_type importance, const char *msg, ...);

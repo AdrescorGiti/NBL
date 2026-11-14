@@ -1,42 +1,21 @@
-## Syntax highlighting for Bourne shell scripts.
+## POSIX shell highlighting for NBL.
+## Based on GNU nano's shell syntax by Mike Frysinger (GPL version 3 or later).
 
-## Original author:  Mike Frysinger
-## License:  GPL version 3 or newer
-
-syntax sh "(\.sh|(^|/|\.)(a|ba|c|da|k|mk|pdk|tc|z)sh(rc|_profile)?|(/etc/|(^|/)\.)profile)$"
-header "^#!.*/(((env|busybox)[[:blank:]]+)?(a|ba|c|da|k|mk|pdk|tc|z)?sh|openrc-run|runscript)\>"
+syntax sh "(\.sh|\.bash|(^|/|\.)(a|ba|da|k|mk|pdk|z)sh(rc|_profile)?|(/etc/|(^|/)\.)profile)$"
+header "^#!.*/(((env|busybox)[[:blank:]]+)?(a|ba|da|k|mk|pdk|z)?sh)\>"
 header "-\*-.*shell-script.*-\*-"
 magic "(POSIX|Bourne-Again) shell script.*text"
 comment "#"
 
-linter dash -n
-
-# Function declarations.
-color brightgreen "^[[:alnum:]_-]+\(\)"
-
-# Keywords, symbols, and comparisons.
-color green "\<(break|case|continue|do|done|elif|else|esac|exit|fi|for|function|if|in|read|return|select|shift|then|time|until|while)\>"
-color green "\<(declare|eval|exec|export|let|local)\>"
-color green "[][{}():;|`$<>!=&\]"
-color green "-(eq|ne|gt|lt|ge|le|ef|ot|nt)\>"
-
-# Short and long options.
-color brightmagenta "[[:blank:]](-[[:alpha:]]|--\<[[:alpha:]-]+)\>"
-
-# Common commands.
-color brightblue "\<(awk|cat|cd|ch(grp|mod|own)|cp|cut|echo|env|grep|head|install|ln|make|mkdir|mv|popd|printf|pushd|rm|rmdir|sed|set|sort|tail|tar|touch|umask|unset)\>"
-color normal "[.-]tar\>"
-
-# Basic variable names (no braces).
-color brightred "\$([-@*#?$![:digit:]]|[[:alpha:]_][[:alnum:]_]*)"
-# More complicated variable names; handles braces and replacements and arrays.
-color brightred "\$\{[#!]?([-@*#?$!]|[[:digit:]]+|[[:alpha:]_][[:alnum:]_]*)(\[([[:blank:]]*[[:alnum:]_]+[[:blank:]]*|@)\])?(([#%/]|:?[-=?+])[^}]*\}|\[|\})"
-
-# Comments.
-color cyan "(^|[[:blank:]])#.*"
-
-# Strings.
-color brightyellow ""([^"\]|\\.)*"|'([^'\]|\\.)*'"
-
-# Trailing whitespace.
-color ,green "[[:space:]]+$"
+# Operators, redirection, builtins, control words and declarations.
+color nblsoft "[][{}();|<>&!]" "[-](eq|ne|gt|lt|ge|le|ef|ot|nt)\>"
+color nblkeyword "\<(break|case|continue|do|done|elif|else|esac|exit|fi|for|if|in|return|then|until|while)\>"
+color nblsoft "\<(alias|cd|command|eval|exec|export|getopts|read|readonly|set|shift|test|trap|type|umask|unalias|unset|wait)\>"
+color nblsuccess "^[[:blank:]]*[[:alpha:]_][[:alnum:]_]*[[:blank:]]*\([[:blank:]]*\)"
+color nbllight "\<[[:alpha:]_][[:alnum:]_]*="
+color nblstring ""([^"\]|\\.)*"|'[^']*'"
+color nbllight "\$([-@*#?$![:digit:]]|[[:alpha:]_][[:alnum:]_]*)"
+color nbllight "\$\{[^}]*\}" "\$\(\(" "\$\(" "`[^`]*`"
+# A hash starts a comment when it is an unquoted word boundary. This
+# expression skips the common quoted and escaped forms preceding it.
+color nblcomment "^([^#'"\\]|\\.|'[^']*'|"([^"\\]|\\.)*")*[[:blank:];|&]#.*" "^#.*"

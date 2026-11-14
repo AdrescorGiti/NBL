@@ -21,6 +21,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
+#include "nbl.h"
 
 #ifdef ENABLE_HELP
 
@@ -410,6 +411,8 @@ void show_help(void)
 	/* Save the settings of all flags. */
 	memcpy(stash, flags, sizeof(flags));
 
+	nbl_modal_layout(TRUE);
+
 	/* Ensure that the help screen's shortcut list can be displayed. */
 	if (ISSET(NO_HELP) || ISSET(ZERO)) {
 		UNSET(NO_HELP);
@@ -534,7 +537,7 @@ void show_help(void)
 
 #ifdef ENABLE_LINENUMBERS
 	margin = was_margin;
-	editwincols = COLS - margin - sidebar;
+	editwincols = nbl_editor_width() - margin - sidebar;
 #endif
 	tabsize = was_tabsize;
 #ifndef NANO_TINY
@@ -551,6 +554,7 @@ void show_help(void)
 	answer = saved_answer;
 	free(help_text);
 	inhelp = FALSE;
+	nbl_modal_layout(FALSE);
 
 	curs_set(0);
 

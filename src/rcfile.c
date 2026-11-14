@@ -22,6 +22,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
+#include "nbl.h"
 
 #ifdef ENABLE_NANORC
 
@@ -48,6 +49,7 @@ static const rcoption rcopts[] = {
 #endif
 	{"casesensitive", CASE_SENSITIVE},
 	{"constantshow", CONSTANT_SHOW},
+	{"nosyntax", NO_SYNTAX},
 #ifdef ENABLED_WRAPORJUSTIFY
 	{"fill", 0},
 #endif
@@ -220,7 +222,33 @@ keystruct *strtosc(const char *input)
 	s->toggle = 0;
 #endif
 
-	if (!strcmp(input, "cancel"))
+	if (!strcmp(input, "reloadconfig"))
+		s->func = nbl_reload_config;
+	else if (!strcmp(input, "runshell"))
+		s->func = nbl_run_script;
+	else if (!strcmp(input, "terminal"))
+		s->func = nbl_toggle_terminal;
+	else if (!strcmp(input, "problems"))
+		s->func = nbl_toggle_problems;
+	else if (!strcmp(input, "copyselection"))
+		s->func = nbl_copy_selection;
+	else if ((!strcmp(input, "shellcheckbuffer") || !strcmp(input, "mentor")))
+		s->func = nbl_mentor_check;
+	else if (!strcmp(input, "nextdiagnostic"))
+		s->func = nbl_next_diagnostic;
+	else if (!strcmp(input, "explorer"))
+		s->func = nbl_toggle_explorer;
+	else if (!strcmp(input, "explorerfocus"))
+		s->func = nbl_toggle_focus;
+	else if (!strcmp(input, "explorerrefresh"))
+		s->func = nbl_refresh_explorer;
+	else if (!strcmp(input, "explorerhidden"))
+		s->func = nbl_toggle_hidden;
+	else if (!strcmp(input, "explorernarrow"))
+		s->func = nbl_narrow_explorer;
+	else if (!strcmp(input, "explorerwiden"))
+		s->func = nbl_widen_explorer;
+	else if (!strcmp(input, "cancel"))
 		s->func = do_cancel;
 #ifdef ENABLE_HELP
 	else if (!strcmp(input, "help"))
@@ -295,7 +323,7 @@ keystruct *strtosc(const char *input)
 #endif
 #ifdef ENABLE_WORDCOMPLETION
 	else if (!strcmp(input, "complete"))
-		s->func = complete_a_word;
+		s->func = nbl_complete_shell;
 #endif
 #ifndef NANO_TINY
 	else if (!strcmp(input, "indent"))
@@ -1006,7 +1034,7 @@ short closest_index_color(short red, short green, short blue)
 	/* Translation table, from 14 intended gray levels to 24 available levels. */
 	static const short gray[] = { 1, 2, 3, 4, 5, 6, 7, 9, 11, 13, 15, 18, 21, 23 };
 
-	if (COLORS != 256)
+	if (COLORS < 256)
 		return THE_DEFAULT;
 	else if (red == green && green == blue && 0 < red && red < 0xF)
 		return 232 + gray[red - 1];
@@ -1054,6 +1082,10 @@ short color_to_short(const char *colorname, bool *vivid, bool *thick)
 		*vivid = FALSE;
 		*thick = FALSE;
 	}
+
+	short role = nbl_named_color(colorname);
+	if (role != -1)
+		return role;
 
 	if (colorname[0] == '#' && strlen(colorname) == 4) {
 		unsigned short r, g, b;
@@ -1536,6 +1568,42 @@ void parse_rcfile(FILE *rcstream, bool just_syntax, bool intros_only)
 		option = ptr;
 		ptr = parse_next_word(ptr);
 
+		if (strcmp(option, "checkonopen") == 0) {
+			nbl_check_on_open = (set > 0);
+			continue;
+		}
+		if (strcmp(option, "checkonsave") == 0) {
+			nbl_check_on_save = (set > 0);
+			continue;
+		}
+		if (strcmp(option, "explorer") == 0) {
+			nbl_explorer_visible = (set > 0);
+			continue;
+		}
+		if (strcmp(option, "explorerwidth") == 0 && set > 0) {
+			ssize_t width;
+			if (parse_num(ptr, &width) && width >= 15 && width <= 60)
+				nbl_explorer_percent = width;
+			else
+				jot_error(N_("Explorer width must be between 15 and 60"));
+			continue;
+		}
+		if (strcmp(option, "theme") == 0 && set > 0) {
+			if (strcmp(ptr, "blue") == 0 || strcmp(ptr, "terminal") == 0)
+				nbl_blue = (strcmp(ptr, "blue") == 0);
+			else
+				jot_error(N_("Theme must be blue or terminal"));
+			continue;
+		}
+		if (strcmp(option, "linenumbers") == 0)
+			nbl_use_line_numbers = (set > 0);
+		else if (strcmp(option, "mouse") == 0)
+			nbl_use_mouse = (set > 0);
+		else if (strcmp(option, "autoindent") == 0)
+			nbl_use_autoindent = (set > 0);
+		else if (strcmp(option, "tabstospaces") == 0)
+			nbl_use_spaces = (set > 0);
+
 		/* Find the just parsed option name among the existing names. */
 		for (i = 0; rcopts[i].name != NULL; i++) {
 			if (strcmp(option, rcopts[i].name) == 0)
@@ -1726,7 +1794,17 @@ void do_rcfiles(void)
 	} else {
 		const char *xdgconfdir;
 
-		if (have_nanorc(SYSCONFDIR, "/nanorc"))
+#ifdef ENABLE_COLOR
+		/* Load shipped definitions before optional system and user overrides. */
+		const char *builtins[] = {"/sh.nanorc", "/python.nanorc", "/c.nanorc"};
+		for (size_t i = 0; i < sizeof(builtins) / sizeof(*builtins); i++) {
+			char *definition = concatenate(PKGDATADIR, builtins[i]);
+			if (access(definition, R_OK) == 0)
+				parse_one_include(definition, NULL);
+			free(definition);
+		}
+#endif
+		if (have_nanorc(SYSCONFDIR, "/nbl/nblrc"))
 			parse_one_nanorc();
 
 		get_homedir();
@@ -1734,9 +1812,8 @@ void do_rcfiles(void)
 
 		/* Now try to find a nanorc file in the user's home directory or in the
 		 * XDG configuration directories, and process the first one found. */
-		if (have_nanorc(homedir, "/" HOME_RC_NAME) ||
-					have_nanorc(xdgconfdir, "/nano/" RCFILE_NAME) ||
-					have_nanorc(homedir, "/.config/nano/" RCFILE_NAME))
+		if (have_nanorc(xdgconfdir, "/nbl/nblrc") ||
+					have_nanorc(homedir, "/.config/nbl/nblrc"))
 			parse_one_nanorc();
 		else if (homedir == NULL && xdgconfdir == NULL)
 			jot_error(N_("I can't find my home directory!  Wah!"));

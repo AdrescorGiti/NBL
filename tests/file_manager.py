@@ -1,0 +1,97 @@
+"""Explorer filesystem operations are explicit and preserve existing files."""
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import sys
+
+from coding import F8
+from explorer import spawn, done
+
+with TemporaryDirectory() as temp:
+    root = Path(temp)
+    project = root / "project"
+    project.mkdir()
+    (project / "existing").write_text("keep")
+    (project / "link").symlink_to(root, target_is_directory=True)
+    with spawn(str(Path(sys.argv[1]).resolve()), temp, [str(project)], size=(32, 130)) as child:
+        child.expect_exact("Explorer")
+        child.send(F8)
+        child.send("n")
+        child.expect_exact("New file path")
+        child.send("nested/новый.py\r")
+        child.expect_exact("Create missing parent directories")
+        child.send("y")
+        child.expect_exact("новый.py")
+        assert (project / "nested" / "новый.py").is_file()
+        child.send(F8)
+        child.send("n")
+        child.expect_exact("New file path")
+        child.send(str(project / "existing") + "\r")
+        child.expect_exact("File exists")
+        child.send("g")
+        child.expect_exact("Open folder")
+        child.send(str(project / "nested") + "\r")
+        child.expect_exact("Project folder changed")
+        child.send("d")
+        child.expect_exact("Close open buffers")
+        child.send("u")
+        child.expect_exact("Project folder changed")
+        child.send("\x18")
+        done(child)
+    assert (project / "existing").read_text() == "keep"
+    assert (project / "link").is_symlink()
+
+with TemporaryDirectory() as temp:
+    root = Path(temp)
+    project = root / "project"
+    project.mkdir()
+    (project / "source").write_text("payload")
+    with spawn(str(Path(sys.argv[1]).resolve()), temp, [str(project)], size=(32, 130)) as child:
+        child.expect_exact("Explorer")
+        child.send(F8)
+        child.send("e")
+        child.expect_exact("Rename to")
+        child.send("renamed !\r")
+        child.expect_exact("Entry moved")
+        assert not (project / "source").exists()
+        child.send("m")
+        child.expect_exact("Move to")
+        child.send("nested/moved\r")
+        child.expect_exact("Create missing parent directories")
+        child.send("y")
+        child.expect_exact("Entry moved")
+        child.send("i")
+        child.expect_exact("Project folder changed")
+        child.send("c")
+        child.expect_exact("Copy to")
+        child.send("copy\r")
+        child.expect_exact("File copied")
+        assert (project / "nested" / "moved").read_text() == "payload"
+        assert (project / "nested" / "copy").read_text() == "payload"
+        child.send("d")
+        child.expect_exact("Delete this entry permanently")
+        child.send("n")
+        assert (project / "nested" / "copy").exists()
+        child.send("d")
+        child.expect_exact("Delete this entry permanently")
+        child.send("y")
+        child.expect_exact("Entry deleted")
+        child.send("N")
+        child.expect_exact("New folder path")
+        child.send("one/two\r")
+        child.expect_exact("Create missing parent directories")
+        child.send("y")
+        child.expect_exact("Folder created")
+        child.send("g")
+        child.expect_exact("Open folder")
+        child.send("one\r")
+        child.expect_exact("Project folder changed")
+        child.send("d")
+        child.expect_exact("Delete this entry permanently")
+        child.send("y")
+        child.expect_exact("Entry deleted")
+        assert not (project / "nested" / "one" / "two").exists()
+        child.send("h")
+        child.expect_exact("Project folder changed")
+        child.send("\x18")
+        done(child)
+print("Explorer creates, renames, moves, copies and deletes entries with path and data protections")

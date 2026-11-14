@@ -1,0 +1,50 @@
+.TH NBL 1 "November 2026" "NBL 0.4.0"
+.SH NAME
+nbl \- a terminal editor with a project explorer and local code diagnostics
+.SH SYNOPSIS
+.B nbl
+.RI [ options ]
+.RI [ directory ]
+.RI [[ +line[,column] ] " file" ]...
+.SH DESCRIPTION
+NBL is an independent fork of GNU nano 9.3. It adds a right-side project
+explorer, configurable themes, and tools for shell, Python, C, and C++.
+.SH SHORTCUTS
+.TP
+.B Ctrl+O, Ctrl+X, Ctrl+W
+Write file, close or exit, and search.
+.TP
+.B F4, F5, F6
+Reload the TOML configuration, run the current code, or toggle the terminal.
+.TP
+.B F7, F8
+Toggle the explorer and switch focus.
+.TP
+.B F9
+Copy a buffer selection to the clipboard.
+.TP
+.B F10, F11, F12
+Check the current code with NBL Mentor, jump to the next diagnostic, and
+toggle Problems.
+.TP
+.B Ctrl+]
+Complete a token.
+.SH EXPLORER
+With Explorer focused, press ? for shortcuts. Use g to go to a path,
+i to enter a folder, u to go up, and h to go home. Use n and N to create a
+file and folder, e to rename, m to move, c to copy, and d to request
+deletion. Deleting a directory requires it to be empty.
+.SH FILES
+.TP
+.I ~/.config/nbl/config.toml
+Theme, editor, explorer, terminal, and executable settings.
+.TP
+.I ~/.config/nbl/nblrc
+User configuration. Respects XDG_CONFIG_HOME.
+.TP
+.I ~/.local/share/nbl/
+User history and cursor position when enabled. Respects XDG_DATA_HOME.
+.SH SEE ALSO
+.BR nano (1),
+.BR sh (1),
+.BR shellcheck (1)

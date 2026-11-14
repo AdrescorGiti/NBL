@@ -20,7 +20,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
-#include "revision.h"
+#include "nbl.h"
 
 #include <ctype.h>
 #ifdef __linux__
@@ -31,11 +31,7 @@
 #include <wchar.h>
 #endif
 
-#ifdef REVISION
-#define BRANDING  REVISION
-#else
-#define BRANDING  PACKAGE_STRING
-#endif
+#define BRANDING "NBL"
 
 static int *key_buffer = NULL;
 		/* A buffer for the keystrokes that haven't been handled yet. */
@@ -198,7 +194,7 @@ void read_keys_from(WINDOW *frame)
 	/* Before reading the first keycode, display any pending screen updates. */
 	doupdate();
 
-	if (reveal_cursor && (!spotlighted || ISSET(SHOW_CURSOR) || currmenu == MSPELL) &&
+	if (reveal_cursor && !nbl_explorer_has_focus() && !nbl_tools_has_focus() && (!spotlighted || ISSET(SHOW_CURSOR) || currmenu == MSPELL) &&
 						(LINES > 1 || lastmessage <= HUSH))
 		curs_set(1);
 
@@ -218,8 +214,17 @@ void read_keys_from(WINDOW *frame)
 #ifdef NANO_TINY
 		input = wgetch(frame);
 #else
-		if (!the_window_resized)
+		if (!the_window_resized) {
+			bool running = currmenu == MMAIN && nbl_terminal_active();
+			if (running)
+				wtimeout(frame, 40);
 			input = wgetch(frame);
+			if (running) {
+				wtimeout(frame, -1);
+				if (input == ERR)
+					input = NBL_TERMINAL_TICK;
+			}
+		}
 		if (the_window_resized) {
 			regenerate_screen();
 			input = THE_WINDOW_RESIZED;
@@ -276,7 +281,7 @@ void read_keys_from(WINDOW *frame)
 	}
 
 	/* If we got a SIGWINCH, get out as the frame argument is no longer valid. */
-	if (input == THE_WINDOW_RESIZED)
+	if (input == THE_WINDOW_RESIZED || input == NBL_TERMINAL_TICK)
 		return;
 
 	/* Remember where the recording of this keystroke (or burst of them) started. */
@@ -1018,6 +1023,10 @@ int parse_kbinput(WINDOW *frame)
 	/* Get one code from the input stream. */
 	keycode = get_input(frame);
 
+	/* A terminal poll tick is not part of an escape sequence. */
+	if (keycode == NBL_TERMINAL_TICK)
+		return keycode;
+
 	/* For an Esc, remember whether the last two arrived by themselves.
 	 * Then increment the counter, rolling around on three escapes. */
 	if (keycode == ESC_CODE) {
@@ -1377,7 +1386,7 @@ int get_kbinput(WINDOW *frame, bool showcursor)
 		kbinput = parse_kbinput(frame);
 
 	/* If we read from the edit window, blank the status bar when it's time. */
-	if (frame == midwin)
+	if (frame == midwin && kbinput != NBL_TERMINAL_TICK)
 		blank_it_when_expired();
 
 	return kbinput;
@@ -1594,18 +1603,20 @@ int get_mouseinput(int *mouse_y, int *mouse_x)
 	/* First, get the actual mouse event. */
 	if (getmouse(&event) == ERR)
 		return -1;
+	if (nbl_editor_mouse(&event) || nbl_tools_mouse(&event) || nbl_mouse_event(&event))
+		return 2;
 
 	in_middle = wenclose(midwin, event.y, event.x);
 	in_footer = wenclose(footwin, event.y, event.x);
 
 	/* Copy (and possibly adjust) the coordinates of the mouse event. */
-	*mouse_x = event.x - (in_middle ? margin : 0);
+	*mouse_x = in_middle && event.x < getbegx(midwin) + margin ? getbegx(midwin) : event.x - (in_middle ? margin : 0);
 	*mouse_y = event.y;
 
 	/* Handle clicks/releases of the first mouse button. */
 	if (event.bstate & (BUTTON1_RELEASED | BUTTON1_CLICKED)) {
 		/* Clicking in the "scrollbar" goes to the roughly corresponding line. */
-		if (in_middle && sidebar && event.x == (COLS - 1) && currmenu == MMAIN) {
+		if (in_middle && sidebar && event.x == getbegx(midwin) + getmaxx(midwin) - 1 && currmenu == MMAIN) {
 			wmouse_trafo(midwin, mouse_y, mouse_x, FALSE);
 			*mouse_y += (*mouse_y ? 1 : 0);
 			goto_line_and_column(openfile->filebot->lineno * *mouse_y / editwinrows + 1,
@@ -2017,6 +2028,8 @@ void titlebar(const char *path)
 
 	/* If the screen is too small, there is no title bar. */
 	if (topwin == NULL)
+		return;
+	if (path == NULL && nbl_title())
 		return;
 
 	wattron(topwin, interface_color_pair[TITLE_BAR]);
@@ -2527,9 +2540,9 @@ void place_the_cursor(void)
 		statusline(ALERT, "Misplaced cursor -- please report a bug");
 #endif
 
-#ifdef _CURSES_H_
-	wnoutrefresh(midwin);  /* Only needed for NetBSD curses. */
-#endif
+	/* The status and explorer windows also queue updates. Restore the
+	 * editing cursor after any of them moved the virtual screen cursor. */
+	wnoutrefresh(midwin);
 
 	openfile->cursor_row = row;
 }
@@ -2543,38 +2556,56 @@ void place_the_cursor(void)
  * from_col is the column number of the first character of this "page". */
 void draw_row(int row, const char *converted, linestruct *line, size_t from_col)
 {
+	bool current = nbl_highlight_line && nbl_highlight_current() && line == openfile->current;
+	int problem = inhelp ? 0 : nbl_line_problem(line->lineno);
+
 #ifdef ENABLE_LINENUMBERS
 	/* If line numbering is switched on, put a line number in front of
 	 * the text -- but only for the parts that are not softwrapped. */
 	if (margin > 0) {
-		wattron(midwin, interface_color_pair[LINE_NUMBER]);
+		int numbers = problem == 2 ? interface_color_pair[ERROR_MESSAGE] | A_BOLD :
+				problem == 1 ? nbl_problem_style(1, FALSE) :
+				current ? COLOR_PAIR(NBL_CURRENT_NUMBER_PAIR) : interface_color_pair[LINE_NUMBER];
+
+		wattrset(midwin, numbers);
 #ifndef NANO_TINY
 		if (ISSET(SOFTWRAP) && from_col != 0)
 			mvwprintw(midwin, row, 0, "%*s", margin - 1, " ");
 		else
 #endif
 			mvwprintw(midwin, row, 0, "%*zd", margin - 1, line->lineno);
-		wattroff(midwin, interface_color_pair[LINE_NUMBER]);
 #ifndef NANO_TINY
-		if (line->has_anchor && (from_col == 0 || !ISSET(SOFTWRAP)))
+		if (problem && (from_col == 0 || !ISSET(SOFTWRAP)))
+			waddch(midwin, problem == 2 ? '!' : '?');
+		else if (line->has_anchor && (from_col == 0 || !ISSET(SOFTWRAP)))
 			wprintw(midwin, using_utf8 ? "\xE2\x80\xA0" : "+");
 		else
 #endif
 			wprintw(midwin, " ");
+		wattrset(midwin, A_NORMAL);
 	}
 #endif /* ENABLE_LINENUMBERS */
+
+	/* Paint the full current row before applying syntax and selections. */
+
+	if (nbl_highlight_current())
+		mvwhline(midwin, row, margin, ' ' | COLOR_PAIR(current ? NBL_CURRENT_PAIR : NBL_EDITOR_PAIR),
+				editwincols);
+	if (current)
+		wattrset(midwin, COLOR_PAIR(NBL_CURRENT_PAIR));
 
 	/* First simply write the converted line -- afterward we'll add colors
 	 * and the marking highlight on just the pieces that need it. */
 	mvwaddstr(midwin, row, margin, converted);
 
 	/* When needed, clear the remainder of the row. */
-	if (is_shorter || ISSET(SOFTWRAP))
+	if (!current && (is_shorter || ISSET(SOFTWRAP)))
 		wclrtoeol(midwin);
+	wattrset(midwin, A_NORMAL);
 
 #ifndef NANO_TINY
 	if (sidebar)
-		mvwaddch(midwin, row, COLS - 1, bardata[row]);
+		mvwaddch(midwin, row, getmaxx(midwin) - 1, bardata[row]);
 #endif
 
 #ifdef ENABLE_COLOR
@@ -2640,9 +2671,10 @@ void draw_row(int row, const char *converted, linestruct *line, size_t from_col)
 					paintlen = actual_x(thetext, wideness(line->data,
 										match.rm_eo) - from_col - start_col);
 
-					wattron(midwin, varnish->attributes);
+					wattrset(midwin, current && varnish->bg == THE_DEFAULT ?
+						nbl_current_ink(varnish->attributes, varnish->pairnum) : varnish->attributes);
 					mvwaddnstr(midwin, row, margin + start_col, thetext, paintlen);
-					wattroff(midwin, varnish->attributes);
+					wattrset(midwin, A_NORMAL);
 				}
 
 				continue;
@@ -2663,9 +2695,10 @@ void draw_row(int row, const char *converted, linestruct *line, size_t from_col)
 								priorline->multidata[varnish->id] == STARTSHERE)) {
 				/* If there is no end on this line, paint whole line, and be done. */
 				if (regexec(varnish->end, line->data, 1, &endmatch, 0) == REG_NOMATCH) {
-					wattron(midwin, varnish->attributes);
+					wattrset(midwin, current && varnish->bg == THE_DEFAULT ?
+						nbl_current_ink(varnish->attributes, varnish->pairnum) : varnish->attributes);
 					mvwaddnstr(midwin, row, margin, converted, -1);
-					wattroff(midwin, varnish->attributes);
+					wattrset(midwin, A_NORMAL);
 					line->multidata[varnish->id] = WHOLELINE;
 					continue;
 				}
@@ -2674,9 +2707,10 @@ void draw_row(int row, const char *converted, linestruct *line, size_t from_col)
 				if (endmatch.rm_eo > from_x) {
 					paintlen = actual_x(converted, wideness(line->data,
 													endmatch.rm_eo) - from_col);
-					wattron(midwin, varnish->attributes);
+					wattrset(midwin, current && varnish->bg == THE_DEFAULT ?
+						nbl_current_ink(varnish->attributes, varnish->pairnum) : varnish->attributes);
 					mvwaddnstr(midwin, row, margin, converted, paintlen);
-					wattroff(midwin, varnish->attributes);
+					wattrset(midwin, A_NORMAL);
 				}
 
 				line->multidata[varnish->id] = ENDSHERE;
@@ -2706,9 +2740,10 @@ void draw_row(int row, const char *converted, linestruct *line, size_t from_col)
 						paintlen = actual_x(thetext, wideness(line->data,
 											endmatch.rm_eo) - from_col - start_col);
 
-						wattron(midwin, varnish->attributes);
+						wattrset(midwin, current && varnish->bg == THE_DEFAULT ?
+						nbl_current_ink(varnish->attributes, varnish->pairnum) : varnish->attributes);
 						mvwaddnstr(midwin, row, margin + start_col, thetext, paintlen);
-						wattroff(midwin, varnish->attributes);
+						wattrset(midwin, A_NORMAL);
 
 						line->multidata[varnish->id] = JUSTONTHIS;
 					}
@@ -2724,9 +2759,10 @@ void draw_row(int row, const char *converted, linestruct *line, size_t from_col)
 				}
 
 				/* Paint the rest of the line, and we're done. */
-				wattron(midwin, varnish->attributes);
+				wattrset(midwin, current && varnish->bg == THE_DEFAULT ?
+						nbl_current_ink(varnish->attributes, varnish->pairnum) : varnish->attributes);
 				mvwaddnstr(midwin, row, margin + start_col, thetext, -1);
-				wattroff(midwin, varnish->attributes);
+				wattrset(midwin, A_NORMAL);
 
 				line->multidata[varnish->id] = STARTSHERE;
 				break;
@@ -2734,6 +2770,12 @@ void draw_row(int row, const char *converted, linestruct *line, size_t from_col)
 		}
 	}
 #endif /* ENABLE_COLOR */
+
+	if (problem) {
+		int style = nbl_problem_style(problem, TRUE);
+		mvwchgat(midwin, row, margin, editwincols, (style & ~A_COLOR) | A_UNDERLINE,
+				PAIR_NUMBER(style), NULL);
+	}
 
 #ifndef NANO_TINY
 	if (stripe_column > from_col && !inhelp &&
@@ -2839,7 +2881,7 @@ int update_line(linestruct *line, size_t index)
 	}
 	if (has_more) {
 		wattron(midwin, hilite_attribute);
-		mvwaddch(midwin, row, COLS - 1 - sidebar, '>');
+		mvwaddch(midwin, row, getmaxx(midwin) - 1 - sidebar, '>');
 		wattroff(midwin, hilite_attribute);
 	}
 
@@ -3028,8 +3070,8 @@ bool less_than_a_screenful(size_t was_lineno, size_t was_leftedge)
 /* Draw a "scroll bar" on the righthand side of the edit window. */
 void draw_scrollbar(void)
 {
-	int fromline = openfile->edittop->lineno - 1;
-	int totallines = openfile->filebot->lineno;
+	ssize_t fromline = openfile->edittop->lineno - 1;
+	ssize_t totallines = openfile->filebot->lineno;
 	int coveredlines = editwinrows;
 
 	if (ISSET(SOFTWRAP)) {
@@ -3047,13 +3089,16 @@ void draw_scrollbar(void)
 	int lowest = (fromline * editwinrows) / totallines;
 	int highest = lowest + (editwinrows * coveredlines) / totallines;
 
-	if (editwinrows > totallines && !ISSET(SOFTWRAP))
-		highest = editwinrows;
+	bool highlight = nbl_highlight_current();
+	bool fits = (editwinrows >= totallines && !ISSET(SOFTWRAP)) ||
+			(fromline == 0 && coveredlines >= totallines);
 
 	for (int row = 0; row < editwinrows; row++) {
-		bardata[row] = ' '|interface_color_pair[SCROLL_BAR]|
-					((row < lowest || row > highest) ? A_NORMAL : A_REVERSE);
-		mvwaddch(midwin, row, COLS - 1, bardata[row]);
+		bool thumb = !fits && row >= lowest && row <= highest;
+
+		bardata[row] = ' ' | (highlight ? COLOR_PAIR(thumb ? NBL_SCROLL_PAIR :
+				NBL_EDITOR_PAIR) : interface_color_pair[SCROLL_BAR] | (thumb ? A_REVERSE : 0));
+		mvwaddch(midwin, row, getmaxx(midwin) - 1, bardata[row]);
 	}
 }
 #endif
@@ -3352,14 +3397,15 @@ void edit_redraw(linestruct *old_current, update_type manner)
 #endif
 		/* Otherwise, update old_current only if it differs from current
 		 * and was horizontally scrolled. */
-		if (old_current != openfile->current && get_page_start(was_pww) > 0)
+		if (old_current != openfile->current &&
+				(nbl_highlight_current() || get_page_start(was_pww) > 0))
 			update_line(old_current, 0);
 
 	/* Update current if the mark is on or it has changed "page", or if it
 	 * differs from old_current and needs to be horizontally scrolled. */
 	if (line_needs_update(was_pww, openfile->placewewant) ||
 						(old_current != openfile->current &&
-						get_page_start(openfile->placewewant) > 0))
+						(nbl_highlight_current() || get_page_start(openfile->placewewant) > 0)))
 		update_line(openfile->current, openfile->current_x);
 }
 
@@ -3416,7 +3462,7 @@ void edit_refresh(void)
 		blank_row(midwin, row);
 #ifndef NANO_TINY
 		if (sidebar)
-			mvwaddch(midwin, row, COLS - 1, bardata[row]);
+			mvwaddch(midwin, row, getmaxx(midwin) - 1, bardata[row]);
 #endif
 		row++;
 	}
@@ -3539,7 +3585,7 @@ void spotlight(size_t from_col, size_t to_col)
 	wattron(midwin, interface_color_pair[SPOTLIGHTED]);
 	waddnstr(midwin, word, actual_x(word, to_col));
 	if (overshoots)
-		mvwaddch(midwin, openfile->cursor_row, COLS - 1 - sidebar, '>');
+		mvwaddch(midwin, openfile->cursor_row, getmaxx(midwin) - 1 - sidebar, '>');
 	wattroff(midwin, interface_color_pair[SPOTLIGHTED]);
 
 	free(word);

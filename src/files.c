@@ -20,6 +20,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
+#include "nbl.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -63,6 +64,11 @@ void make_new_buffer(void)
 #endif
 	/* Make the new buffer the current one, and start initializing it. */
 	openfile = newnode;
+	openfile->diagnostics = NULL;
+	openfile->closers = NULL;
+	openfile->closers_spliced = FALSE;
+	openfile->nbl_checked = FALSE;
+	openfile->nbl_revision = 0;
 
 	openfile->filename = copy_of("");
 
@@ -495,6 +501,9 @@ bool open_buffer(const char *filename, bool new_one)
  * then update the title bar to display the buffer's new status. */
 void set_modified(void)
 {
+	openfile->nbl_revision++;
+	nbl_closers_modified();
+	nbl_clear_diagnostics();
 	if (openfile->modified)
 		return;
 
@@ -600,6 +609,9 @@ void switch_to_next_buffer(void)
 void close_buffer(void)
 {
 	openfilestruct *orphan = openfile;
+	nbl_run_forget(orphan);
+
+	nbl_clear_diagnostics();
 
 	if (orphan == startfile)
 		startfile = startfile->next;
@@ -608,6 +620,7 @@ void close_buffer(void)
 	orphan->next->prev = orphan->prev;
 
 	free(orphan->filename);
+	free(orphan->closers);
 	free_lines(orphan->filetop);
 #ifndef NANO_TINY
 	free(orphan->statinfo);
@@ -2224,7 +2237,9 @@ int write_it_out(bool exiting, bool withprompt)
 			 * and the stat information we had before does not match
 			 * what we have now. */
 			else if (name_exists && openfile->statinfo &&
-						(openfile->statinfo->st_mtime < fileinfo.st_mtime ||
+						(openfile->statinfo->st_mtim.tv_sec != fileinfo.st_mtim.tv_sec ||
+						openfile->statinfo->st_mtim.tv_nsec != fileinfo.st_mtim.tv_nsec ||
+						openfile->statinfo->st_size != fileinfo.st_size ||
 						openfile->statinfo->st_dev != fileinfo.st_dev ||
 						openfile->statinfo->st_ino != fileinfo.st_ino)) {
 
@@ -2267,7 +2282,11 @@ int write_it_out(bool exiting, bool withprompt)
 		return write_region_to_file(answer, NULL, method);
 #endif
 
-	return write_file(answer, NULL, method, !exiting);
+	bool saved = write_file(answer, NULL, method, !exiting);
+
+	if (saved && !exiting && method == OVERWRITE)
+		nbl_mentor_after_save();
+	return saved;
 }
 
 /* Write the current buffer to disk, or discard it. */

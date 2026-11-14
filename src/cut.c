@@ -21,6 +21,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
+#include "nbl.h"
 
 #include <string.h>
 
@@ -45,6 +46,7 @@ void expunge(undo_type action)
 		else
 			update_undo(action);
 #endif
+		nbl_closers_splice(openfile->current_x, charlen, 0, FALSE);
 		/* Move the remainder of the line "in", over the current character. */
 		memmove(&openfile->current->data[openfile->current_x],
 					&openfile->current->data[openfile->current_x + charlen],

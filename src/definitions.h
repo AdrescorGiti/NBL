@@ -232,6 +232,7 @@
 
 /* A special keycode for when we get a SIGWINCH (a window resize). */
 #define THE_WINDOW_RESIZED  0x4F7
+#define NBL_TERMINAL_TICK  0x4F8
 #endif
 
 /* A special keycode for when a key produces an unknown escape sequence. */
@@ -267,9 +268,10 @@
 #define MYESNO        (1<<13)
 #define MLINTER       (1<<14)
 #define MFINDINHELP   (1<<15)
+#define MEXPLORERPATH (1<<16)
 /* This is an abbreviation for all menus except Help and Browser and YesNo. */
 #define MMOST  (MMAIN|MWHEREIS|MREPLACE|MREPLACEWITH|MGOTOLINE|MWRITEFILE|MINSERTFILE|\
-                MEXECUTE|MWHEREISFILE|MGOTODIR|MFINDINHELP|MSPELL|MLINTER)
+                MEXECUTE|MWHEREISFILE|MGOTODIR|MFINDINHELP|MSPELL|MLINTER|MEXPLORERPATH)
 #ifndef NANO_TINY
 #define MSOME  MMOST|MBROWSER
 #else
@@ -501,6 +503,8 @@ typedef struct groupstruct {
 } groupstruct;
 
 typedef struct undostruct {
+	struct nbl_closers *closers_before, *closers_after;
+	bool auto_pair;
 	undo_type type;
 		/* The operation type that this undo item is for. */
 	int xflags;
@@ -544,6 +548,11 @@ typedef struct positionstruct {
 #endif
 
 typedef struct openfilestruct {
+	struct nbl_closers *closers;
+	bool closers_spliced;
+	struct nbl_diagnostics *diagnostics;
+	bool nbl_checked;
+	unsigned long nbl_revision;
 	char *filename;
 		/* The file's name. */
 	linestruct *filetop;

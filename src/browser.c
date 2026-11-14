@@ -20,6 +20,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
+#include "nbl.h"
 
 #ifdef ENABLE_BROWSER
 
@@ -702,7 +703,10 @@ char *browse_in(const char *inpath)
 		path = mallocstrcpy(path, operating_dir);
 #endif
 
-	return browse(path);
+	nbl_modal_layout(TRUE);
+	char *chosen = browse(path);
+	nbl_modal_layout(FALSE);
+	return chosen;
 }
 
 #endif /* ENABLE_BROWSER */

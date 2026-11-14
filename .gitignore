@@ -79,3 +79,12 @@ core
 /m4/.gitignore
 /m4/gnulib-cache.m4
 /snippet/
+
+# NBL development and release artifacts.
+/build/
+/build-source/
+/dist/
+/src/nbl
+/src/nbl-default-config.inc
+__pycache__/
+*.pkg.tar.zst

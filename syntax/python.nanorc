@@ -9,36 +9,38 @@ comment "#"
 linter pyflakes
 
 # Function definitions.
-color brightblue "def [[:alnum:]_]+"
+color nblaccent "(def|class)[[:blank:]]+[[:alnum:]_]+"
 # Keywords.
-color brightcyan "\<(and|as|assert|async|await|break|case|class|continue|def|del)\>"
-color brightcyan "\<(elif|else|except|finally|for|from|global|if|import|in|is)\>"
-color brightcyan "\<(lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\>"
+color nblkeyword "\<(and|as|assert|async|await|break|case|class|continue|def|del)\>"
+color nblkeyword "\<(elif|else|except|finally|for|from|global|if|import|in|is)\>"
+color nblkeyword "\<(lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\>"
 # In Python 2 `print` and `exec` are keywords, but they are functions in Python 3,
 # so only color these words when they are followed by whitespace, assuming that
 # `print (x)` is a statement and `print(x)` a function call.
-color brightcyan "\<(exec|print)([[:blank:]]|$)"
+color nblkeyword "\<(exec|print)([[:blank:]]|$)"
 # Avoid coloring "match" in a call of re.match().
-color brightcyan "\<match[[:blank:]]"
+color nblkeyword "\<match[[:blank:]]"
 
 # Special values.
-color brightmagenta "\<(False|None|True)\>"
+color nblnumber "\<(False|None|True)\>"
+
+color nblnumber "\<(0[xX][[:xdigit:]_]+|0[bB][01_]+|0[oO][0-7_]+|[0-9][0-9_]*(\.[0-9_]*)?([eE][+-]?[0-9_]+)?[jJ]?)\>"
 
 # Decorators.
-color cyan "@[[:alpha:]_][[:alnum:]_.]*"
+color nblaccent "@[[:alpha:]_][[:alnum:]_.]*"
 
 # Mono-quoted strings.
-color brightgreen "'([^'\]|\\.)*'|"([^"\]|\\.)*"|'''|""""
+color nblstring "'([^'\]|\\.)*'|"([^"\]|\\.)*"|'''|""""
 color normal "'''|""""
 # Comments.
-color brightred "(^|[[:blank:]])#.*"
+color nblcomment "(^|[[:blank:]])#.*"
 # Triple-quoted strings.
-color brightgreen start="'''([^'),]|$)" end="(^|[^(\])'''"
-color brightgreen start=""""([^"),]|$)" end="(^|[^(\])""""
+color nblstring start="'''([^'),]|$)" end="(^|[^(\])'''"
+color nblstring start=""""([^"),]|$)" end="(^|[^(\])""""
 
 # Backslash escapes.
-color lime "\\($|[\'"abfnrtv]|[0-3]?[0-7]?[0-7]|x[[:xdigit:]]{2})"
-color lime "\\(N\{[[:alpha:]]+\}|u[[:xdigit:]]{4}|U[[:xdigit:]]{8})"
+color nblsoft "\\($|[\'"abfnrtv]|[0-3]?[0-7]?[0-7]|x[[:xdigit:]]{2})"
+color nblsoft "\\(N\{[[:alpha:]]+\}|u[[:xdigit:]]{4}|U[[:xdigit:]]{8})"
 
 # Reminders.
 color brightwhite,yellow "\<(FIXME|TODO|XXX)\>"

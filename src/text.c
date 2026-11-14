@@ -24,6 +24,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
+#include "nbl.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -667,12 +668,16 @@ void do_undo(void)
 		recook = TRUE;
 #endif
 
+	openfile->nbl_revision++;
+	nbl_clear_diagnostics();
+
 	/* When at the point where the buffer was last saved, unset "Modified". */
 	if (openfile->current_undo == openfile->last_saved) {
 		openfile->modified = FALSE;
 		titlebar(NULL);
 	} else
 		set_modified();
+	nbl_restore_closers(u->closers_before);
 }
 
 /* Redo the last thing(s) we undid. */
@@ -708,7 +713,7 @@ void do_redo(void)
 		strcpy(&data[u->head_x + strlen(u->strdata)], &line->data[u->head_x]);
 		free(line->data);
 		line->data = data;
-		goto_line_posx(u->tail_lineno, u->tail_x);
+		goto_line_posx(u->tail_lineno, u->tail_x - u->auto_pair);
 		break;
 	case ENTER:
 		redidmsg = _("line break");
@@ -836,12 +841,16 @@ void do_redo(void)
 		recook = TRUE;
 #endif
 
+	openfile->nbl_revision++;
+	nbl_clear_diagnostics();
+
 	/* When at the point where the buffer was last saved, unset "Modified". */
 	if (openfile->current_undo == openfile->last_saved) {
 		openfile->modified = FALSE;
 		titlebar(NULL);
 	} else if (!suppress_modification)
 		set_modified();
+	nbl_restore_closers(u->closers_after);
 }
 #endif /* !NANO_TINY */
 
@@ -849,7 +858,7 @@ void do_redo(void)
 void do_enter(void)
 {
 	linestruct *newnode = make_new_node(openfile->current);
-	size_t extra = 0;
+	size_t extra = 0, step = 0;
 #ifndef NANO_TINY
 	linestruct *sampleline = openfile->current;
 	bool allblanks = FALSE;
@@ -863,6 +872,8 @@ void do_enter(void)
 			sampleline = sampleline->next;
 #endif
 		extra = indent_length(sampleline->data);
+		if (sampleline == openfile->current)
+			step = nbl_extra_indent();
 
 		/* When breaking in the indentation, limit the automatic one. */
 		if (extra > openfile->current_x)
@@ -872,19 +883,21 @@ void do_enter(void)
 	}
 #endif /* NANO_TINY */
 
-	newnode->data = nmalloc(strlen(openfile->current->data + openfile->current_x) + extra + 1);
-	strcpy(&newnode->data[extra], openfile->current->data + openfile->current_x);
+	newnode->data = nmalloc(strlen(openfile->current->data + openfile->current_x) + extra + step + 1);
+	strcpy(&newnode->data[extra + step], openfile->current->data + openfile->current_x);
 
 #ifndef NANO_TINY
 	/* Adjust the mark if it is on the current line after the cursor. */
 	if (openfile->mark == openfile->current && openfile->mark_x > openfile->current_x) {
 		openfile->mark = newnode;
-		openfile->mark_x += extra - openfile->current_x;
+		openfile->mark_x += extra + step - openfile->current_x;
 	}
 
 	if (ISSET(AUTOINDENT)) {
 		/* Copy the whitespace from the sample line to the new one. */
 		strncpy(newnode->data, sampleline->data, extra);
+		memset(newnode->data + extra, ' ', step);
+		extra += step;
 		/* If there were only blanks before the cursor, trim them. */
 		if (allblanks)
 			openfile->current_x = 0;
@@ -898,6 +911,7 @@ void do_enter(void)
 
 #ifndef NANO_TINY
 	add_undo(ENTER, NULL);
+	nbl_closers_splice(openfile->current_x, 0, extra, TRUE);
 #endif
 
 	/* Insert the newly created line after the current one and renumber. */
@@ -932,6 +946,8 @@ void discard_until(const undostruct *thisitem)
 	while (dropit && dropit != thisitem) {
 		openfile->undotop = dropit->next;
 		free(dropit->strdata);
+		free(dropit->closers_before);
+		free(dropit->closers_after);
 		free_lines(dropit->cutbuffer);
 		group = dropit->grouping;
 		while (group) {
@@ -959,6 +975,9 @@ void add_undo(undo_type action, const char *message)
 
 	/* Initialize the newly allocated undo item. */
 	u->type = action;
+	u->closers_before = nbl_copy_closers();
+	u->closers_after = NULL;
+	u->auto_pair = FALSE;
 	u->strdata = NULL;
 	u->cutbuffer = NULL;
 	u->head_lineno = thisline->lineno;

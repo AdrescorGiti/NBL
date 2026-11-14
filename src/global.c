@@ -20,6 +20,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
+#include "nbl.h"
 
 #include <ctype.h>
 #include <string.h>
@@ -1084,7 +1085,7 @@ void shortcut_init(void)
 			N_("Comment Lines"), WHENHELP(comment_gist), TOGETHER);
 #endif
 #ifdef ENABLE_WORDCOMPLETION
-	add_to_funcs(complete_a_word, MMAIN,
+	add_to_funcs(nbl_complete_shell, MMAIN,
 			N_("Complete"), WHENHELP(completion_gist), BLANKAFTER);
 #endif
 
@@ -1136,6 +1137,21 @@ void shortcut_init(void)
 	add_to_funcs(do_cycle, MMAIN,
 			N_("Cycle"), WHENHELP(cycle_gist), BLANKAFTER);
 #endif
+
+	add_to_funcs(nbl_toggle_problems, MMAIN, N_("Problems"), N_("Toggle the shell problems panel"), TOGETHER);
+	add_to_funcs(nbl_copy_selection, MMAIN, N_("Copy Selection"), N_("Copy selected text to the clipboard"), TOGETHER);
+	add_to_funcs(nbl_toggle_terminal, MMAIN, N_("Terminal"), N_("Toggle the integrated terminal"), TOGETHER);
+	add_to_funcs(nbl_reload_config, MMAIN, N_("Reload Config"), N_("Reload config.toml"), TOGETHER);
+	add_to_funcs(nbl_run_script, MMAIN, N_("Run Code"), N_("Check and run the current code buffer"), TOGETHER);
+	add_to_funcs(nbl_mentor_check, MMAIN, N_("Check Code"), N_("Check the current code buffer with NBL Mentor"), TOGETHER);
+	add_to_funcs(nbl_next_diagnostic, MMAIN, N_("Diagnostic"), N_("Jump to the next shell diagnostic"), TOGETHER);
+
+	add_to_funcs(nbl_toggle_explorer, MMAIN, N_("Explorer"), N_("Toggle the project explorer"), TOGETHER);
+	add_to_funcs(nbl_toggle_focus, MMAIN, N_("Pane"), N_("Switch editor and explorer focus"), TOGETHER);
+	add_to_funcs(nbl_refresh_explorer, MMAIN, N_("Refresh Tree"), N_("Rescan the project directory"), TOGETHER);
+	add_to_funcs(nbl_toggle_hidden, MMAIN, N_("Hidden Files"), N_("Toggle hidden project entries"), TOGETHER);
+	add_to_funcs(nbl_narrow_explorer, MMAIN, N_("Narrow Pane"), N_("Decrease the explorer width"), TOGETHER);
+	add_to_funcs(nbl_widen_explorer, MMAIN, N_("Widen Pane"), N_("Increase the explorer width"), TOGETHER);
 
 	add_to_funcs(do_savefile, MMAIN,
 			N_("Save"), WHENHELP(savefile_gist), BLANKAFTER);
@@ -1376,7 +1392,7 @@ void shortcut_init(void)
 	add_to_sclist(MMAIN, "M-'", 0, to_next_anchor);
 #endif
 #ifdef ENABLE_WORDCOMPLETION
-	add_to_sclist(MMAIN, "^]", 0, complete_a_word);
+	add_to_sclist(MMAIN, "^]", 0, nbl_complete_shell);
 #endif
 #ifdef ENABLE_COMMENT
 	add_to_sclist(MMAIN, "M-3", 0, do_comment);
@@ -1596,19 +1612,30 @@ void shortcut_init(void)
 	add_to_sclist(MMOST & ~MFINDINHELP, "F1", KEY_F(1), do_help);
 	add_to_sclist(MMAIN|MBROWSER|MHELP, "F2", KEY_F(2), do_exit);
 	add_to_sclist(MMAIN, "F3", KEY_F(3), do_writeout);
-#ifdef ENABLE_JUSTIFY
-	add_to_sclist(MMAIN, "F4", KEY_F(4), do_justify);
-#endif
-	add_to_sclist(MMAIN, "F5", KEY_F(5), do_insertfile);
-	add_to_sclist(MMAIN|MBROWSER|MHELP, "F6", KEY_F(6), do_search_forward);
-	add_to_sclist(MMAIN|MBROWSER|MHELP|MLINTER, "F7", KEY_F(7), do_page_up);
-	add_to_sclist(MMAIN|MBROWSER|MHELP|MLINTER, "F8", KEY_F(8), do_page_down);
-	add_to_sclist(MMOST, "F9", KEY_F(9), cut_text);
-	add_to_sclist(MMOST, "F10", KEY_F(10), paste_text);
-	add_to_sclist(MMAIN, "F11", KEY_F(11), report_cursor_position);
-#ifdef ENABLE_SPELLER
-	add_to_sclist(MMAIN, "F12", KEY_F(12), do_spell);
-#endif
+	add_to_sclist(MMAIN, "F4", KEY_F(4), nbl_reload_config);
+	add_to_sclist(MMAIN, "M-4", 0, nbl_refresh_explorer);
+	add_to_sclist(MMAIN, "M-5", 0, nbl_toggle_hidden);
+	add_to_sclist(MMAIN, "M-!", 0, nbl_narrow_explorer);
+	add_to_sclist(MMAIN, "M-@", 0, nbl_widen_explorer);
+
+
+	add_to_sclist(MMAIN, "F5", KEY_F(5), nbl_run_script);
+	add_to_sclist(MBROWSER|MHELP, "F6", KEY_F(6), do_search_forward);
+	add_to_sclist(MMAIN, "F6", KEY_F(6), nbl_toggle_terminal);
+	add_to_sclist(MBROWSER|MHELP|MLINTER, "F7", KEY_F(7), do_page_up);
+	add_to_sclist(MMAIN, "F7", KEY_F(7), nbl_toggle_explorer);
+	add_to_sclist(MMAIN, "M-1", 0, nbl_toggle_explorer);
+	add_to_sclist(MBROWSER|MHELP|MLINTER, "F8", KEY_F(8), do_page_down);
+	add_to_sclist(MMAIN, "F8", KEY_F(8), nbl_toggle_focus);
+	add_to_sclist(MMAIN, "M-2", 0, nbl_toggle_focus);
+	add_to_sclist(MMOST & ~MMAIN, "F9", KEY_F(9), cut_text);
+	add_to_sclist(MMAIN, "F9", KEY_F(9), nbl_copy_selection);
+	add_to_sclist(MMOST & ~MMAIN, "F10", KEY_F(10), paste_text);
+	add_to_sclist(MMAIN, "F10", KEY_F(10), nbl_mentor_check);
+	add_to_sclist(MMAIN, "M-?", 0, nbl_mentor_check);
+	add_to_sclist(MMAIN, "F11", KEY_F(11), nbl_next_diagnostic);
+	add_to_sclist(MMAIN, "M-*", 0, nbl_next_diagnostic);
+	add_to_sclist(MMAIN, "F12", KEY_F(12), nbl_toggle_problems);
 #if defined(ENABLE_EXTRA) && defined(NCURSES_VERSION_PATCH)
 	add_to_sclist(MMAIN, "M-&", 0, show_curses_version);
 #endif

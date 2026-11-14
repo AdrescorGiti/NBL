@@ -6,7 +6,7 @@ if USE_COLOR
 SUBDIRS += syntax
 endif
 
-EXTRA_DIST = IMPROVEMENTS
+EXTRA_DIST = IMPROVEMENTS config.toml.example
 
 ACLOCAL_AMFLAGS = -I m4
 

@@ -1,0 +1,36 @@
+[theme]
+background = "#0B1424"
+foreground = "#DCE8FF"
+accent = "#78C7FF"
+selection = "#28466D"
+current_line = "#1A3555"
+error = "#FF5263"
+comment = "#7387A8"
+keyword = "#80AFFF"
+string = "#A3D9AD"
+number = "#E5BD80"
+
+[editor]
+line_numbers = true
+highlight_current_line = true
+auto_indent = true
+auto_close_brackets = true
+tab_size = 4
+mouse = true
+
+[explorer]
+enabled = true
+position = "right"
+width = 28
+show_hidden = false
+
+[terminal]
+enabled = true
+position = "bottom"
+height = 12
+
+# Optional executable names or paths. Each value is a single command.
+# [tools]
+# python = "python3"
+# cc = "gcc"
+# cxx = "g++"

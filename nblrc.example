@@ -1,0 +1,22 @@
+# Copy to ~/.config/nbl/nblrc or $XDG_CONFIG_HOME/nbl/nblrc.
+set theme blue
+set explorer
+set explorerwidth 24
+set mouse
+set linenumbers
+set tabsize 4
+set tabstospaces
+set autoindent
+set checkonopen
+set checkonsave
+
+# POSIX shell syntax highlighting is enabled.
+# set nosyntax
+# Alt+Y toggles syntax highlighting for the current session.
+# Add individual shipped definitions as needed, e.g. for a /usr install:
+# include "/usr/share/nbl/python.nanorc"
+
+# Examples of rebinding NBL actions in the main editing menu:
+# bind F4 shellcheckbuffer main
+# bind F5 runshell main
+# bind F6 terminal main

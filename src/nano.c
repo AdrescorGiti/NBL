@@ -20,7 +20,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
-#include "revision.h"
+#include "nbl.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -50,6 +50,8 @@
 
 #ifdef ENABLE_MOUSE
 static int oldinterval = -1;
+static bool mouse_drag_mode;
+void disable_mouse_support(void);
 		/* Used to store the user's original mouse click interval. */
 #endif
 #ifdef HAVE_TERMIOS_H
@@ -228,6 +230,9 @@ void suggest_ctrlT_ctrlZ(void)
  * bracketed-paste mode, and restore the original terminal settings. */
 void restore_terminal(void)
 {
+#ifdef ENABLE_MOUSE
+	disable_mouse_support();
+#endif
 	curs_set(1);
 	endwin();
 #ifndef NANO_TINY
@@ -240,6 +245,7 @@ void restore_terminal(void)
 /* Exit normally: restore terminal state and report any startup errors. */
 void finish(void)
 {
+	nbl_terminal_stop();
 	/* Blank the status bar and (if applicable) the shortcut list. */
 	blank_statusbar();
 	blank_bottombars();
@@ -385,6 +391,8 @@ void die(const char *msg, ...)
 			break;
 	}
 
+	nbl_terminal_stop();
+
 	/* Abandon the building. */
 	exit(1);
 }
@@ -401,13 +409,14 @@ void window_init(void)
 	}
 
 	topwin = NULL;
+	int toolbar_height = 0;
 
 	/* If the terminal is very flat, don't set up a title bar. */
 	if (LINES < 3) {
 		editwinrows = (ISSET(ZERO) ? LINES : 1);
 		/* Set up two subwindows.  If the terminal is just one line,
 		 * edit window and status-bar window will cover each other. */
-		midwin = newwin(editwinrows, COLS, 0, 0);
+		midwin = newwin(editwinrows, nbl_editor_width(), 0, 0);
 		footwin = newwin(1, COLS, LINES - 1, 0);
 	} else {
 		int minimum = (ISSET(ZERO) ? 3 : ISSET(MINIBAR) ? 4 : 5);
@@ -418,13 +427,30 @@ void window_init(void)
 			toprows = 0;
 
 		editwinrows = LINES - toprows - bottomrows + (ISSET(ZERO) ? 1 : 0);
+		toolbar_height = nbl_tools_height(editwinrows);
+		editwinrows -= toolbar_height;
 
 		/* Set up the normal three subwindows. */
 		if (toprows > 0)
 			topwin = newwin(toprows, COLS, 0, 0);
-		midwin = newwin(editwinrows, COLS, toprows, 0);
+		midwin = newwin(editwinrows, nbl_editor_width(), toprows + (nbl_terminal_top ? toolbar_height : 0),
+					nbl_explorer_left ? COLS - nbl_editor_width() : 0);
 		footwin = newwin(bottomrows, COLS, LINES - bottomrows, 0);
 	}
+
+	int width = nbl_editor_width();
+	sidebar = (ISSET(INDICATOR) && LINES > 5 && width > 9) ? 1 : 0;
+	bardata = nrealloc(bardata, LINES * sizeof(*bardata));
+	if (margin > width - 4 && margin > 0)
+		margin = 0;
+	editwincols = width - margin - sidebar;
+	nbl_explorer_layout(getbegy(midwin));
+	nbl_tools_layout(nbl_terminal_top ? getbegy(midwin) - toolbar_height :
+			getbegy(midwin) + editwinrows, toolbar_height);
+	nbl_theme_windows();
+#ifdef ENABLE_MOUSE
+	nbl_cancel_drag();
+#endif
 
 	/* In case the terminal shrunk, make sure the status line is clear. */
 	wnoutrefresh(footwin);
@@ -437,10 +463,10 @@ void window_init(void)
 
 #ifdef ENABLED_WRAPORJUSTIFY
 	/* Set up the wrapping point, accounting for screen width when negative. */
-	if (COLS + fill < 0)
+	if (width + fill < 0)
 		wrap_at = 0;
 	else if (fill <= 0)
-		wrap_at = COLS + fill;
+		wrap_at = width + fill;
 	else
 		wrap_at = fill;
 #endif
@@ -449,14 +475,33 @@ void window_init(void)
 #ifdef ENABLE_MOUSE
 void disable_mouse_support(void)
 {
+	if (mouse_drag_mode) {
+		fputs("\x1b[?1002l", stdout);
+		fflush(stdout);
+		mouse_drag_mode = FALSE;
+	}
+	nbl_cancel_drag();
 	mousemask(0, NULL);
 	mouseinterval(oldinterval);
 }
 
 void enable_mouse_support(void)
 {
-	mousemask(ALL_MOUSE_EVENTS, NULL);
-	oldinterval = mouseinterval(50);
+	const char *mouse_capability = tigetstr("kmous");
+	mmask_t events = ALL_MOUSE_EVENTS;
+	bool sgr = mouse_capability && mouse_capability != (char *)-1 &&
+			strcmp(mouse_capability, "\x1b[<") == 0;
+
+	if (sgr)
+		events = BUTTON1_PRESSED | BUTTON1_RELEASED | BUTTON4_PRESSED |
+				BUTTON5_PRESSED | REPORT_MOUSE_POSITION;
+	mmask_t enabled = mousemask(events, NULL);
+	oldinterval = mouseinterval(sgr ? 0 : 50);
+	if (sgr && enabled) {
+		fputs("\x1b[?1002h", stdout);
+		fflush(stdout);
+		mouse_drag_mode = TRUE;
+	}
 }
 
 /* Switch mouse support on or off, as needed. */
@@ -489,13 +534,13 @@ void print_opt(const char *shortflag, const char *longflag, const char *descript
 /* Explain how to properly use nano and its command-line options. */
 void usage(void)
 {
-	printf(_("Usage: nano [OPTIONS] [[+LINE[,COLUMN]] FILE]...\n\n"));
+	printf("Usage: nbl [OPTIONS] [DIRECTORY | [+LINE[,COLUMN]] FILE...]\n\n");
 #ifndef NANO_TINY
 	/* TRANSLATORS: The next two strings are part of the --help output.
 	 * It's best to keep its lines within 80 characters. */
 	printf(_("To place the cursor on a specific line of a file, put the line number with\n"
 				"a '+' before the filename.  The column number can be added after a comma.\n"));
-	printf(_("When a filename is '-', nano reads data from standard input.\n\n"));
+	printf(_("When a filename is '-', NBL reads data from standard input.\n\n"));
 	/* TRANSLATORS: The next three are column headers of the --help output. */
 	print_opt(_("Option"), _("Long option"), N_("Meaning"));
 	/* TRANSLATORS: The next forty or so strings are option descriptions
@@ -582,12 +627,14 @@ void usage(void)
 #endif
 #ifdef ENABLE_NANORC
 	print_opt(_("-f <file>"), _("--rcfile=<file>"),
-					N_("Use only this file for configuring nano"));
+					N_("Use only this file for configuring NBL"));
 #endif
 #if defined(ENABLE_BROWSER) || defined(ENABLE_HELP)
 	print_opt("-g", "--showcursor", N_("Show cursor in file browser & help text"));
 #endif
 	print_opt("-h", "--help", N_("Show this help text and exit"));
+	print_opt("", "--check-config", N_("Validate config.toml and exit"));
+	print_opt("", "--init-config", N_("Create config.toml if missing and exit"));
 #ifndef NANO_TINY
 	print_opt("-i", "--autoindent", N_("Automatically indent new lines"));
 	print_opt("-j", "--jumpyscrolling", N_("Scroll per half-screen, not per line"));
@@ -651,11 +698,7 @@ void usage(void)
  * information, and the configuration options this nano was compiled with. */
 void version(void)
 {
-#ifdef REVISION
-	printf(" GNU nano from git, %s\n", REVISION);
-#else
-	printf(_(" GNU nano, version %s\n"), VERSION);
-#endif
+	printf("NBL %s (GNU nano %s)\n", VERSION, NBL_UPSTREAM_VERSION);
 #ifndef NANO_TINY
 	/* TRANSLATORS: The %s is the year of the latest release. */
 	printf(_(" (C) %s the Free Software Foundation and various contributors\n"), "2026");
@@ -966,9 +1009,6 @@ void handle_crash(int signal)
 /* Handler for SIGTSTP (suspend). */
 void suspend_nano(int signal)
 {
-#ifdef ENABLE_MOUSE
-	disable_mouse_support();
-#endif
 	restore_terminal();
 
 	printf("\n\n");
@@ -1052,15 +1092,14 @@ void regenerate_screen(void)
 	endwin();
 	refresh();
 
-	sidebar = (ISSET(INDICATOR) && LINES > 5 && COLS > 9) ? 1 : 0;
-	bardata = nrealloc(bardata, LINES * sizeof(int));
-
-	editwincols = COLS - margin - sidebar;
-
 	/* Put the terminal in the desired state again, and
 	 * recreate the subwindows with their (new) sizes. */
 	terminal_init();
 	window_init();
+#ifdef ENABLE_MOUSE
+	if (ISSET(USE_MOUSE))
+		enable_mouse_support();
+#endif
 
 	/* Only when fully initialized, redraw the contents of the subwindows. */
 	if (we_are_running) {
@@ -1260,14 +1299,14 @@ void confirm_margin(void)
 	int needed_margin = digits(openfile->filebot->lineno) + 1;
 
 	/* When not requested or space is too tight, suppress line numbers. */
-	if (!ISSET(LINE_NUMBERS) || needed_margin > COLS - 4)
+	if (!ISSET(LINE_NUMBERS) || needed_margin > nbl_editor_width() - 4)
 		needed_margin = 0;
 
 	if (needed_margin != margin) {
 		bool keep_focus = (margin > 0) && focusing;
 
 		margin = needed_margin;
-		editwincols = COLS - margin - sidebar;
+		editwincols = nbl_editor_width() - margin - sidebar;
 
 #ifndef NANO_TINY
 		/* Ensure a proper starting column for the first screen row. */
@@ -1397,6 +1436,7 @@ bool changes_something(functionptrtype f)
 {
 	return (f == do_savefile || f == do_writeout || f == do_enter || f == do_tab ||
 			f == do_delete || f == do_backspace || f == cut_text || f == paste_text ||
+			f == nbl_complete_shell ||
 #ifndef NANO_TINY
 			f == chop_previous_word || f == chop_next_word ||
 			f == zap_text || f == cut_till_eof || f == do_execute ||
@@ -1491,6 +1531,8 @@ void inject(char *burst, size_t count)
 		add_undo(ADD, NULL);
 #endif
 
+	nbl_closers_splice(openfile->current_x, 0, count, FALSE);
+
 	/* Make room for the new bytes and copy them into the line. */
 	thisline->data = nrealloc(thisline->data, datalen + count + 1);
 	memmove(thisline->data + openfile->current_x + count,
@@ -1583,8 +1625,10 @@ void process_a_keystroke(void)
 	functionptrtype function;
 
 	/* Read in a keystroke, and show the cursor while waiting. */
-	input = get_kbinput(midwin, VISIBLE);
+	input = get_kbinput(midwin, !nbl_explorer_has_focus() && !nbl_tools_has_focus());
 
+	if (input == NBL_TERMINAL_TICK)
+		return;
 	lastmessage = VACUUM;
 
 #ifndef NANO_TINY
@@ -1602,6 +1646,20 @@ void process_a_keystroke(void)
 	}
 #endif
 
+	if (nbl_tools_key(input))
+		return;
+#ifdef ENABLE_MOUSE
+	if (input != KEY_MOUSE)
+		nbl_cancel_drag();
+#endif
+	if (nbl_explorer_key(input))
+		return;
+	if (nbl_explorer_has_focus() && input == START_OF_PASTE) {
+		while (get_kbinput(midwin, BLIND) != END_OF_PASTE)
+			;
+		return;
+	}
+
 	/* Check for a shortcut in the main list. */
 	shortcut = get_shortcut(input);
 	function = (shortcut ? shortcut->func : NULL);
@@ -1610,6 +1668,8 @@ void process_a_keystroke(void)
 	if (!function) {
 		if (input < 0x20 || input > 0xFF || meta_key)
 			unbound_key(input);
+		else if (nbl_explorer_has_focus())
+			return;
 		else if (ISSET(VIEW_MODE))
 			print_view_warning();
 		else {
@@ -1635,7 +1695,7 @@ void process_a_keystroke(void)
 	 * are waiting, it's time to insert these bytes into the edit buffer. */
 	if (depth > 0 && (function || waiting_keycodes() == 0)) {
 		puddle[depth] = '\0';
-		inject(puddle, depth);
+		nbl_type(puddle, depth);
 		depth = 0;
 	}
 
@@ -1686,7 +1746,7 @@ void process_a_keystroke(void)
 	}
 
 #ifdef ENABLE_WORDCOMPLETION
-	if (function != complete_a_word)
+	if (function != complete_a_word && function != nbl_complete_shell)
 		pletion_line = NULL;
 #endif
 #ifndef NANO_TINY
@@ -1702,7 +1762,8 @@ void process_a_keystroke(void)
 #endif
 
 	/* Execute the function of the shortcut. */
-	function();
+	if (function != do_backspace || !nbl_backspace_pair())
+		function();
 
 #ifndef NANO_TINY
 	/* When the marked region changes without Shift being held,
@@ -1742,6 +1803,8 @@ int main(int argc, char **argv)
 		/* Whether the quoting regex was compiled successfully. */
 #endif
 	const struct option long_options[] = {
+		{"check-config", 0, NULL, 0x100},
+		{"init-config", 0, NULL, 0x101},
 		{"boldtext", 0, NULL, 'D'},
 #ifdef ENABLE_MULTIBUFFER
 		{"multibuffer", 0, NULL, 'F'},  /* Deprecated; remove in 2031. */
@@ -1881,6 +1944,10 @@ int main(int argc, char **argv)
 	while ((optchr = getopt_long(argc, argv, "ABC:DEFGHIJ:KLMNOPQ:RST:UVWX:Y:Z"
 				"abcdef:ghijklmno:pqr:s:tuvwxyz!@%_01/", long_options, NULL)) > 0) {
 		switch (optchr) {
+			case 0x100:
+				return nbl_check_config();
+			case 0x101:
+				return nbl_init_config();
 #ifndef NANO_TINY
 			case 'A':
 				SET(SMART_HOME);
@@ -2166,8 +2233,7 @@ int main(int argc, char **argv)
 		putenv("TERM=vt220");
 
 	/* Enter into curses mode.  Abort if this fails. */
-	if (initscr() == NULL)
-		exit(1);
+	nbl_init_terminal();
 
 #ifdef ENABLE_COLOR
 	/* If the terminal can do colors, tell ncurses to switch them on. */
@@ -2406,7 +2472,19 @@ int main(int argc, char **argv)
 
 	/* If tabsize wasn't specified, set its default value. */
 	if (tabsize == -1)
-		tabsize = WIDTH_OF_TAB;
+		tabsize = 4;
+
+	if (nbl_use_line_numbers)
+		SET(LINE_NUMBERS);
+	if (nbl_use_mouse && !ISSET(RAW_SEQUENCES))
+		SET(USE_MOUSE);
+	if (nbl_use_autoindent)
+		SET(AUTOINDENT);
+	if (nbl_use_spaces)
+		SET(TABS_TO_SPACES);
+	SET(INDICATOR);
+
+	nbl_config_start(ignore_rcfiles);
 
 #ifdef ENABLE_COLOR
 	/* On capable terminals, use colors, otherwise just reverse or bold.*/
@@ -2435,12 +2513,6 @@ int main(int argc, char **argv)
 	/* Create the three subwindows, based on the current screen dimensions. */
 	window_init();
 	curs_set(0);
-
-#ifndef NANO_TINY
-	sidebar = (ISSET(INDICATOR) && LINES > 5 && COLS > 9) ? 1 : 0;
-	bardata = nrealloc(bardata, LINES * sizeof(int));
-#endif
-	editwincols = COLS - sidebar;
 
 	set_up_signal_handlers();
 
@@ -2512,6 +2584,10 @@ int main(int argc, char **argv)
 	/* Tell ncurses to pass the Esc key quickly. */
 	set_escdelay(50);
 #endif
+
+	if (optind < argc && strcmp(argv[optind], "-") != 0 &&
+			nbl_project_argument(argv[optind]))
+		optind++;
 
 	/* Read the files mentioned on the command line into new buffers. */
 	while (optind < argc && (!openfile || read_them_all)) {
@@ -2655,6 +2731,7 @@ int main(int argc, char **argv)
 		die(_("Can open just one file\n"));
 #endif
 
+	nbl_set_default_project();
 	prepare_for_display();
 
 #ifdef ENABLE_NANORC
@@ -2670,7 +2747,7 @@ int main(int argc, char **argv)
 #ifdef ENABLE_HELP
 	if (openfile->filename[0] == '\0' && openfile->totsize == 0 &&
 				openfile->next == openfile && !ISSET(NO_HELP) && NOTREBOUND)
-		statusbar(_("Welcome to nano.  For basic help, type Ctrl+G."));
+		statusbar(_("Welcome to NBL.  For basic help, type Ctrl+G."));
 #endif
 
 #ifdef ENABLE_LINENUMBERS
@@ -2681,6 +2758,7 @@ int main(int argc, char **argv)
 	we_are_running = TRUE;
 
 	while (TRUE) {
+		nbl_terminal_poll();
 #ifdef ENABLE_LINENUMBERS
 		confirm_margin();
 #endif
@@ -2710,6 +2788,13 @@ int main(int argc, char **argv)
 									!ISSET(ZERO) && waiting_keycodes() == 0)
 			report_cursor_position();
 
+		if (nbl_check_on_open && !openfile->nbl_checked && !ISSET(RESTRICTED) &&
+				nbl_language() != NBL_PLAIN && !waiting_keycodes()) {
+			nbl_check_buffer(FALSE);
+			if (nbl_problem_count())
+				nbl_tools_show_problems();
+		}
+		nbl_status();
 		as_an_at = TRUE;
 
 #if defined(ENABLE_UTF8) && !defined(NANO_TINY)
@@ -2748,6 +2833,12 @@ int main(int argc, char **argv)
 
 		/* Forget any earlier cursor position at the prompt. */
 		put_cursor_at_end_of_answer();
+
+		nbl_explorer_draw();
+		nbl_tools_draw();
+		/* The editor owns the cursor unless the explorer has focus. */
+		if (!nbl_explorer_has_focus() && !nbl_tools_has_focus() && !ISSET(ZERO) && LINES > 1)
+			wnoutrefresh(midwin);
 
 		/* Read in and interpret a single keystroke. */
 		process_a_keystroke();

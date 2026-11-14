@@ -20,6 +20,7 @@
  **************************************************************************/
 
 #include "prototypes.h"
+#include "nbl.h"
 
 #ifdef ENABLE_COLOR
 
@@ -40,6 +41,8 @@ void set_interface_colorpairs(void)
 	defaults_allowed = (use_default_colors() == OK);
 #endif
 
+	nbl_init_theme();
+
 	/* Initialize the color pairs for nano's interface elements. */
 	for (size_t index = 0; index < NUMBER_OF_ELEMENTS; index++) {
 		colortype *combo = color_combo[index];
@@ -51,9 +54,23 @@ void set_interface_colorpairs(void)
 				if (combo->bg == THE_DEFAULT)
 					combo->bg = COLOR_BLACK;
 			}
-			init_pair(index + 1, combo->fg, combo->bg);
+			nbl_init_pair(index + 1, combo->fg, combo->bg, FALSE);
 			interface_color_pair[index] = COLOR_PAIR(index + 1) | combo->attributes;
 			rescind_colors = FALSE;
+		} else if (nbl_highlight_current() && index == STATUS_BAR)
+			interface_color_pair[index] = COLOR_PAIR(NBL_STATUS_PAIR);
+		else if (nbl_highlight_current() && index != GUIDE_STRIPE) {
+			short fg = nbl_named_color(index == ERROR_MESSAGE ? "nblerror" :
+					index == LINE_NUMBER ? "nblmuted" :
+					index == KEY_COMBO ? "nblsoft" : "nbllight");
+			short bg = index == LINE_NUMBER ? nbl_background() :
+					nbl_named_color(index == SELECTED_TEXT || index == SPOTLIGHTED ?
+							"nblselection" : "nblpane");
+
+			nbl_init_pair(index + 1, fg, bg, FALSE);
+			interface_color_pair[index] = COLOR_PAIR(index + 1);
+			if (index == TITLE_BAR || index == KEY_COMBO)
+				interface_color_pair[index] |= A_BOLD;
 		} else {
 			if (index == FUNCTION_TAG || index == SCROLL_BAR)
 				interface_color_pair[index] = A_NORMAL;
@@ -71,7 +88,6 @@ void set_interface_colorpairs(void)
 				interface_color_pair[index] = hilite_attribute;
 		}
 
-		free(color_combo[index]);
 	}
 
 	if (rescind_colors) {
@@ -84,7 +100,7 @@ void set_interface_colorpairs(void)
  * in the given syntax, giving identical combinations the same number. */
 void set_syntax_colorpairs(syntaxtype *sntx)
 {
-	short number = NUMBER_OF_ELEMENTS;
+	short number = NBL_STATUS_PAIR;
 	colortype *older;
 
 	for (colortype *ink = sntx->color; ink != NULL; ink = ink->next) {
@@ -109,12 +125,12 @@ void set_syntax_colorpairs(syntaxtype *sntx)
 /* Initialize the color pairs for the current syntax. */
 void prepare_palette(void)
 {
-	short number = NUMBER_OF_ELEMENTS;
+	short number = NBL_STATUS_PAIR;
 
 	/* For each unique pair number, tell ncurses the combination of colors. */
 	for (colortype *ink = openfile->syntax->color; ink != NULL; ink = ink->next)
 		if (ink->pairnum > number) {
-			init_pair(ink->pairnum, ink->fg, ink->bg);
+			nbl_init_pair(ink->pairnum, ink->fg, ink->bg, TRUE);
 			number = ink->pairnum;
 		}
 

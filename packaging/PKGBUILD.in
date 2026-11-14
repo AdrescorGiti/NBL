@@ -1,0 +1,41 @@
+pkgname=nbl
+pkgver=0.4.0
+pkgrel=1
+pkgdesc='GNU nano fork with a project explorer, script terminal, and language tooling'
+arch=('x86_64')
+url='https://github.com/AdrescorGiti/NBL'
+license=('GPL-3.0-or-later' 'MIT')
+depends=('glibc' 'ncurses' 'file' 'zlib' 'sh')
+optdepends=('shellcheck: shell diagnostics'
+            'python: check and run Python scripts'
+            'gcc: check, compile, and run C and C++ buffers')
+makedepends=('gettext' 'groff' 'pkgconf' 'texinfo')
+options=('!lto')
+source=("${pkgname}-${pkgver}.tar.xz")
+sha256sums=('@SOURCE_SHA256@')
+
+build() {
+    mkdir -p "$srcdir/build"
+    cd "$srcdir/build"
+    CFLAGS="$CFLAGS -march=x86-64 -mtune=generic" \
+        "../$pkgname-$pkgver/configure" --prefix=/usr --sysconfdir=/etc --disable-nls
+    make -C lib
+    make -C src
+}
+
+check() {
+    cd "$srcdir/$pkgname-$pkgver"
+    sh tests/identity.sh "$srcdir/build/src/nbl"
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    install -Dm755 "$srcdir/build/src/nbl" "$pkgdir/usr/bin/nbl"
+    install -Dm644 docs/nbl.1 "$pkgdir/usr/share/man/man1/nbl.1"
+    install -Dm644 -t "$pkgdir/usr/share/nbl" syntax/*.nanorc
+    install -Dm644 -t "$pkgdir/usr/share/doc/nbl" \
+        README.md UPSTREAM.md BUILDING.md CHANGELOG.md nblrc.example config.toml.example
+    install -Dm644 -t "$pkgdir/usr/share/licenses/nbl" LICENSE COPYING.DOC
+    install -Dm644 third_party/tomlc17/LICENSE "$pkgdir/usr/share/licenses/nbl/tomlc17.LICENSE"
+    install -Dm644 third_party/libvterm/LICENSE "$pkgdir/usr/share/licenses/nbl/libvterm.LICENSE"
+}

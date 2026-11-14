@@ -205,25 +205,16 @@ bool have_statedir(void)
 
 	get_homedir();
 
-	if (homedir) {
-		statedir = concatenate(homedir, "/.nano/");
 
-		if (stat(statedir, &dirinfo) == 0 && S_ISDIR(dirinfo.st_mode)) {
-			registername = concatenate(statedir, POSITION_HISTORY);
-			return TRUE;
-		}
-	}
-
-	free(statedir);
 	xdgdatadir = getenv("XDG_DATA_HOME");
 
 	if (homedir == NULL && xdgdatadir == NULL)
 		return FALSE;
 
 	if (xdgdatadir)
-		statedir = concatenate(xdgdatadir, "/nano/");
+		statedir = concatenate(xdgdatadir, "/nbl/");
 	else
-		statedir = concatenate(homedir, "/.local/share/nano/");
+		statedir = concatenate(homedir, "/.local/share/nbl/");
 
 	if (stat(statedir, &dirinfo) < 0) {
 		if (xdgdatadir == NULL) {
